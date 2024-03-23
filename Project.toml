@@ -1,0 +1,13 @@
+name = "GridapIce"
+uuid = "056abfb8-394b-42d6-aa23-e432c0261e7c"
+authors = ["Daniel Richards <daniel.richards@monash.edu>"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.7"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
