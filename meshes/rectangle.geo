@@ -1,0 +1,17 @@
+Point(1) = {0, 0, 0, 1.0};
+Point(2) = {5000.0, 0, 0, 1.0}; // Right
+Point(3) = {5000.0, 1000.0, 0, 1.0};
+Point(4) = {0, 1000.0, 0, 1.0}; // Top
+Line(1) = {1, 2}; // Bottom
+Line(2) = {2, 3}; // Right
+Line(3) = {3, 4}; // Top
+Line(4) = {4, 1}; // Left
+Physical Line('bottom') = {1};
+Physical Line('right') = {2};
+Physical Line('top') = {3};
+Physical Line('left') = {4};
+Physical Surface('interior') = {1};
+Line Loop(1) = {1, 2, 3, 4};
+Plane Surface(1) = {1};
+Mesh.CharacteristicLengthMin = 156.25 * 0.8;
+Mesh.CharacteristicLengthMax = 156.25 * 1.2;
