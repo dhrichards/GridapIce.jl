@@ -74,7 +74,7 @@ function solve_up(sol,μ,η,z,stk::Stokes)
     return sol, res
 end
 
-function solve_up_linear(sol,τ,M,h,stk::Stokes)
+function solve_up_linear(sol,μ,η,z,stk::Stokes)
 
     
 
@@ -83,9 +83,14 @@ function solve_up_linear(sol,τ,M,h,stk::Stokes)
 
     f = stk.f; β = stk.β
 
-    res((u,p),(v,q)) = ∫(  h*(τ(ε(M,u))⊙ε(M,v) - div(M,u)*q - div(M,v)*p - v⋅f) )dΩ + ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
-    a((u,p),(v,q)) = ∫(  h*(τ(ε(M,u))⊙ε(M,v) - div(M,u)*q - div(M,v)*p) )dΩ + ∫( β*u⋅v )dΓw 
-    b((v,q)) = ∫( v⋅f )dΩ
+    ∇x = transform_gradient(z)
+    εx(u) = symmetric_part(∇x(u))
+    divx(u) = tr(∇x(u))
+
+    h = Zonly∘(∇(z))
+
+    a((u,p),(v,q)) = ∫(  h*((μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
+    b((v,q)) = ∫( h*v⋅f )dΩ
 
     op = AffineFEOperator(a,b,stk.X,stk.Y)
     sol, = solve!(sol,stk.solver,op)
