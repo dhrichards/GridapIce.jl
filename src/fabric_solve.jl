@@ -12,7 +12,7 @@ struct SpecFab <: Fabric
     Ω::Union{Triangulation,GridapDistributed.DistributedTriangulation}
     Γ::Union{BoundaryTriangulation,GridapDistributed.DistributedTriangulation}
     Λ::Union{SkeletonTriangulation,GridapDistributed.DistributedTriangulation}
-    f0h::Union{CellField,GridapDistributed.DistributedCellField}
+    f0h::Union{CellField,MultiFieldFEFunction,GridapDistributed.DistributedMultiFieldFEFunction}
     a2::Function # Second order tensor
     a4::Function # Fourth order tensor
     λ::Float64 # 
@@ -27,14 +27,18 @@ struct SpecFab <: Fabric
         Td = (D==2 ? 3 : 6)
         lm,nlm_len = sf.init(L)
         degree = 2*order
-        reffe = ReferenceFE(lagrangian,VectorValue{nlm_len,ComplexF64},order)
+
         f0 = Complex.(zeros(nlm_len))
         f0[1] = 1/√(4π)
         f0 = VectorValue(f0)
+        
 
         if type == :H1implicit
             conformity = :H1
             solve = specfab_solve
+        elseif type == :H1implicit_real
+            conformity = :H1
+            solve = specfab_solve_real
         elseif type == :H1semiexplicit
             conformity = :H1
             solve = h1_semiexplicit
@@ -46,16 +50,25 @@ struct SpecFab <: Fabric
             solve = dg_transient
         end
 
+        if type == :H1implicit_real
+            reffe = ReferenceFE(lagrangian,VectorValue{nlm_len,Float64},order)
+            Gr = TestFESpace(model,reffe,conformity=conformity,)
+            Fr = TrialFESpace(Gr)
+            G = MultiFieldFESpace([Gr,Gr])
+            F = MultiFieldFESpace([Fr,Fr])
+            f0h = interpolate_everywhere([real(f0),imag(f0)],F)
+        else
+            reffe = ReferenceFE(lagrangian,VectorValue{nlm_len,ComplexF64},order)
+            G = TestFESpace(model,reffe,conformity=conformity,vector_type=Vector{ComplexF64})
+            F = TrialFESpace(G)
+            
+            f0h = interpolate_everywhere(f0,F)
+
+        end
+
         Ω = Triangulation(model)
         Γ = BoundaryTriangulation(model)
         Λ = SkeletonTriangulation(model)
-
-        G = TestFESpace(model,reffe,conformity=conformity,vector_type=Vector{ComplexF64})
-        F = TrialFESpace(G)
-
-        f0h = interpolate_everywhere(f0,F)
-
-        
 
         if D == 2
             a2 = a2calc2d
@@ -126,14 +139,15 @@ function fabric_solve_dg(model,fh,uh,C,dt,fab)
 end
 
 
-function specfab_solve(fh,uh,C,T,h,dt,fab)
+function specfab_solve(fh,uh,C,ϕ,h,dt,fab)
 
     κ = 1e-2
+    
 
     dΩ = Measure(fab.Ω,fab.degree)
 
     # Switch from transformed grid to real: (also requires multiplying by h as dz = h*dζ)
-    ∇ᴿ = Transform_∇(T)
+
 
 
 
@@ -144,7 +158,7 @@ function specfab_solve(fh,uh,C,T,h,dt,fab)
 
     M = makeM(W,C,λ*SR,fab.f0h)
 
-    a(f,g) = ∫( h*(f⋅g + dt*(uh⋅∇ᴿ(f))⋅g + dt*κ*(∇ᴿ(f)⊙∇ᴿ(g)) -dt*(M⋅f)⋅g) )dΩ # 
+    a(f,g) = ∫( h*(f⋅g + dt*(uh⋅∇ꜝ(ϕ,f))⋅g + dt*κ*(∇ꜝ(ϕ,f)⊙∇ꜝ(ϕ,g)) -dt*(M⋅f)⋅g) )dΩ # 
     b(g) = ∫( h*fh⋅g )dΩ
 
     op = AffineFEOperator(a,b,fab.F,fab.G)
@@ -153,6 +167,39 @@ function specfab_solve(fh,uh,C,T,h,dt,fab)
 
     return fh
 end
+
+
+
+function specfab_solve_real(fh,uh,C,T,h,dt,fab)
+
+    κ = 1e-2
+
+    dΩ = Measure(fab.Ω,fab.degree)
+
+    # Switch from transformed grid to real: (also requires multiplying by h as dz = h*dζ)
+    ∇z = Transform_∇(T)
+
+    fhr,fhi = fh
+
+    SR = sqrt∘(0.5*ε(uh)⊙ε(uh))
+    ∇u = uh ⊗ ∇
+    W = 0.5*(∇u - (∇u)')
+    λ = fab.λ
+
+    M = makeM(W,C,λ*SR,fhr)
+    Mr = real(M); Mi = imag(M)
+
+    a((fr,fi),(gr,gi)) = ∫( h*(fr⋅gr + dt*(uh⋅∇z(fr))⋅gr + dt*κ*(∇z(fr)⊙∇z(gr)) -dt*(Mr⋅fr - Mi⋅fi)⋅gr) )dΩ +
+                        ∫( h*(fi⋅gi + dt*(uh⋅∇z(fi))⋅gi + dt*κ*(∇z(fi)⊙∇z(gi)) -dt*(Mr⋅fi + Mi⋅fr)⋅gi) )dΩ  
+    l((gr,gi)) = ∫( h*(fhr⋅gr + fhi⋅gi) )dΩ
+
+    op = AffineFEOperator(a,l,fab.F,fab.G)
+    fh = solve(fab.ls,op)
+
+
+    return fh
+end
+
 
 
 function h1_semiexplicit(model,fh,uh,C,dt,fab)

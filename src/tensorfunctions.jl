@@ -111,5 +111,31 @@ function inv4(T::SymFourthOrderTensorValue)
     return Mandel2Tensor(V)
     
 end
+#explicity import Base.real and extend
+
+import Base: real, imag
+
+function real(T::Union{TensorValue})
+    return TensorValue(real.(T.data))
+end
+
+function imag(T::Union{TensorValue})
+    return TensorValue(imag.(T.data))
+end
 
 
+
+# inv∇(f) = Operation(inv_op)(∇(f))
+
+# function evaluate!(cache,::Broadcasting{typeof(inv∇)},f)
+#     Broadcasting(Operation(inv_op))(Broadcasting(∇)(f))
+# end
+
+# function inv_op(∇ϕ::TensorValue{2,2})
+#     a = ∇ϕ[1,1]
+#     b = ∇ϕ[1,2]
+#     c = ∇ϕ[2,1]
+#     d = ∇ϕ[2,2]
+#     det = a*d - b*c
+#     return TensorValue(d/det, -b/det, -c/det, a/det)
+# end

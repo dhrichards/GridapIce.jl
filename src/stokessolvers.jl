@@ -48,17 +48,25 @@ struct Stokes
 end
 
 
-function solve_up(sol,τ,M,h,stk::Stokes)
-    M∇ = Transform_∇(M)
-    Mε(u) = 0.5*(M∇(u) + M∇(u)')
-    Mdiv(u) = tr(M∇(u))
+
+
+
+function solve_up(sol,μ,η,z,stk::Stokes)
+    
 
     dΩ = Measure(stk.Ω,stk.degree)
     dΓw = Measure(stk.Γw,stk.degree)
 
     f = stk.f; β = stk.β
 
-    res((u,p),(v,q)) = ∫(  h*(τ(Mε(u))⊙Mε(v) - Mdiv(u)*q - Mdiv(v)*p - v⋅f) )dΩ + ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
+    
+    ∇x = transform_gradient(z)
+    εx(u) = symmetric_part(∇x(u))
+    divx(u) = tr(∇x(u))
+
+    h = Zonly∘(∇(z))
+        
+    res((u,p),(v,q)) = ∫(  h*(η∘(εx(u))*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p - v⋅f) )dΩ #+ ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
     op = FEOperator(res,stk.X,stk.Y)
 
     sol, = solve!(sol,stk.solver,op)
@@ -68,17 +76,15 @@ end
 
 function solve_up_linear(sol,τ,M,h,stk::Stokes)
 
-    M∇ = Transform_∇(M)
-    Mε(u) = 0.5*(M∇(u) + M∇(u)')
-    Mdiv(u) = tr(M∇(u))
+    
 
     dΩ = Measure(stk.Ω,stk.degree)
     dΓw = Measure(stk.Γw,stk.degree)
 
     f = stk.f; β = stk.β
 
-    res((u,p),(v,q)) = ∫(  h*(τ(Mε(u))⊙Mε(v) - Mdiv(u)*q - Mdiv(v)*p - v⋅f) )dΩ + ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
-    a((u,p),(v,q)) = ∫(  h*(τ(Mε(u))⊙Mε(v) - Mdiv(u)*q - Mdiv(v)*p) )dΩ + ∫( β*u⋅v )dΓw 
+    res((u,p),(v,q)) = ∫(  h*(τ(ε(M,u))⊙ε(M,v) - div(M,u)*q - div(M,v)*p - v⋅f) )dΩ + ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
+    a((u,p),(v,q)) = ∫(  h*(τ(ε(M,u))⊙ε(M,v) - div(M,u)*q - div(M,v)*p) )dΩ + ∫( β*u⋅v )dΓw 
     b((v,q)) = ∫( v⋅f )dΩ
 
     op = AffineFEOperator(a,b,stk.X,stk.Y)

@@ -34,22 +34,44 @@ function makeM_op(W::TensorValue,C::SymTensorValue{3,Float64,6},λSR::Float64,f0
     return M
 end
 
+
+function a2calc(f::Union{MultiFieldFEFunction,GridapDistributed.DistributedMultiFieldFEFunction})
+    fr,fi = f
+    return a2calc_op∘(fr,fi)
+end
+
+function a4calc(f::Union{MultiFieldFEFunction,GridapDistributed.DistributedMultiFieldFEFunction})
+    fr,fi = f
+    return a4calc_op∘(fr,fi)
+end
+
+
 function a2calc(f0::CellField)
-    return a2calc∘(f0)
+    return a2calc_op∘(f0)
 end
 
 function a4calc(f0::CellField)
-    return a4calc∘(f0)
+    return a4calc_op∘(f0)
 end
 
-function a2calc(f0::VectorValue)
+function a2calc_op(fr::VectorValue,fi::VectorValue)
+    f = fr + im*fi
+    return a2calc_op(f)
+end
+
+function a4calc_op(fr::VectorValue,fi::VectorValue)
+    f = fr + im*fi
+    return a4calc_op(f)
+end
+
+function a2calc_op(f0::VectorValue)
     a2 = sf.a2(f0.data)
     return SymTensorValue(a2[1,1],a2[1,2],a2[1,3],
                                   a2[2,2],a2[2,3],
                                           a2[3,3])
 end
 
-function a4calc(f0::VectorValue)
+function a4calc_op(f0::VectorValue)
     a4 = sf.a4(f0.data)
     return SymFourthOrderTensorValue(a4[1,1,1,1],a4[1,1,1,2],a4[1,1,1,3],a4[1,1,2,2],a4[1,1,2,3],a4[1,1,3,3],
                                         a4[1,2,1,1],a4[1,2,1,2],a4[1,2,1,3],a4[1,2,2,2],a4[1,2,2,3],a4[1,2,3,3],
@@ -59,23 +81,40 @@ function a4calc(f0::VectorValue)
                                         a4[3,3,1,1],a4[3,3,1,2],a4[3,3,1,3],a4[3,3,2,2],a4[3,3,2,3],a4[3,3,3,3])
 end
 
-function a2calc2d(f0::CellField)
-    return a2calc2d∘(f0)
+function a2calc2d(f::Union{MultiFieldFEFunction,GridapDistributed.DistributedMultiFieldFEFunction})
+    fr,fi = f
+    return a2calc2d_op∘(fr,fi)
 end
 
-
-
-function a4calc2d(f0::CellField)
-    return a4calc2d∘(f0)
+function a4calc2d(f::Union{MultiFieldFEFunction,GridapDistributed.DistributedMultiFieldFEFunction})
+    fr,fi = f
+    return a4calc2d_op∘(fr,fi)
 end
 
-function a2calc2d(f0::VectorValue)
+function a2calc2d(f::CellField)
+    return a2calc2d_op∘(f)
+end
+function a4calc2d(f::CellField)
+    return a4calc2d_op∘(f)
+end
+
+function a2calc2d_op(fr::VectorValue,fi::VectorValue)
+    f = fr + im*fi
+    return a2calc2d_op(f)
+end
+
+function a4calc2d_op(fr::VectorValue,fi::VectorValue)
+    f = fr + im*fi
+    return a4calc2d_op(f)
+end
+
+function a2calc2d_op(f0::VectorValue)
     a2 = sf.a2(f0.data)
     return SymTensorValue(a2[1,1],a2[1,2],
                                   a2[2,2])
 end
 
-function a4calc2d(f0::VectorValue)
+function a4calc2d_op(f0::VectorValue)
     a4 = sf.a4(f0.data)
     return SymFourthOrderTensorValue(a4[1,1,1,1],a4[1,1,1,2],a4[1,1,2,2],
                                         a4[1,2,1,1],a4[1,2,1,2],a4[1,2,2,2],
