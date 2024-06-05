@@ -217,16 +217,16 @@ function solve_surface_combined(model,zh,b,dt,uh,solver,❄️=0,order=2,κ=1e-4
 
     ∇x = transform_gradient(zh)
     ∇s(u) = removeZ∘∇x(u)
-    h = Zonly∘(∇(zh))
+    ∫_Ωx = transform_integral(zh)
 
     us = removeZ∘uh
     w = Zonly∘uh
     
     # Solve for new surface
-    aΓ(z,v) = ∫( (z*v + dt*us⋅∇s(z)*v)*h )dΓ
+    aΓ(z,v) = ∫_Ωx( z*v + dt*us⋅∇s(z)*v )dΓ
     aΩ(z,v) = ∫( ∇s(z)⊙∇s(v) )dΩ
 
-    lΓ(v) = ∫( (zh + dt*(w + ❄️) )*v*h )dΓ  #
+    lΓ(v) = ∫_Ωx( (zh + dt*(w + ❄️) )*v )dΓ  #
 
     a(z,v) = aΓ(z,v) + aΩ(z,v)
     l(v) = lΓ(v)

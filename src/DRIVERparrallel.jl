@@ -20,83 +20,79 @@ include("coordinatetransform.jl")
 include("stokessolvers.jl")
 include("specfab.jl")
 
-function testvalue(::Type{Tuple{T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15}}) where {T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15}
-    (testvalue(T1),testvalue(T2),testvalue(T3),testvalue(T4),testvalue(T5),testvalue(T6),testvalue(T7),testvalue(T8),testvalue(T9),testvalue(T10),testvalue(T11),testvalue(T12),testvalue(T13),testvalue(T14),testvalue(T15))
-  end
-  
-function testvalue(::Type{Tuple{T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15}}) where {T1,T2,T3,T4,T5,T6,T7,T8,T9,T10,T11,T12,T13,T14,T15}
-    (testvalue(T1),testvalue(T2),testvalue(T3),testvalue(T4),testvalue(T5),testvalue(T6),testvalue(T7),testvalue(T8),testvalue(T9),testvalue(T10),testvalue(T11),testvalue(T12),testvalue(T13),testvalue(T14),testvalue(T15))
-  end
-
-
-
+#Run with below command from the root directory
+# ./mpiexecjl --project=. -n 2 julia src/DRIVERparrallel.jl
 # options = "-ksp_type cg -pc_type gamg -ksp_monitor"
 # use mumps
-options = "-ksp_type fgmres -pc_type lu -pc_factor_mat_solver_type mumps -ksp_monitor"
+options = "-ksp_type cg -pc_type gamg -pc_factor_mat_solver_type mumps -ksp_monitor"
+
+# use complex numbers
+# options = "-ksp_type fgmres -pc_type lu -ksp_monitor"
 # function main(ranks)
 function main(rank_partition,distribute)
     
     parts  = distribute(LinearIndices((prod(rank_partition),)))
-    # GridapPETSc.with(args=split(options)) do
+    GridapPETSc.with(args=split(options)) do
 
-        problem = ISMIPHOM(:B,5e3)
+        problem = ISMIPHOM(:B,1.0)
+        L = (5e3,1e3)
 
         D = problem.D
         ncell = (32,16)
 
-        model = CartesianDiscreteModel(parts,rank_partition,(0,problem.L,0,1),ncell,isperiodic=(true,false))
+        model = CartesianDiscreteModel(parts,rank_partition,(0,1,0,1),ncell,isperiodic=(true,false))
         labels = get_labels(model,D)
+
+        solver = PETScLinearSolver()
         
-        stk = Stokes(model,problem,LUSolver())
+        stk = Stokes(model,problem,solver)
         Ecc = 1.0; Eca = 25.0; n = 1.0; B = 100.0
-        function FlowLaw(A,A⁴)
-            μ = SachsVisc(A,A⁴)
-            τ(ε) = μ⊙ε
-            return τ
-        end
 
+        fab = SpecFab(model,D,:H1implicit_real,1,0.3,4,solver)
 
-        fab = SpecFab(model,D,:H1implicit,1,0.3,4)
-
-        CFL = 10.0
+        CFL = 1.0
         d = problem.L[1]/ncell[1]
-        dt = 0.1
-        nt = 500
+        dt = CFL*d/1.0
+        nt = 100
 
-        s,b,ζ,L = get_sb_fields(problem,model)
-        M = Transform(ζ,b,s)
-        h = s - b
-        z = ζ*h + b
+        
+        z0(x) = x[2]*(problem.s(x[1])-problem.b(x[1]))+problem.b(x[1]) 
+        
+
+        S = FESpace(Triangulation(model),ReferenceFE(lagrangian,Float64,2),conformity=:H1)
+        z = interpolate_everywhere(z0,S)
 
         fh = fab.f0h
-        τ = FlowLaw(fab.a2∘(fh),fab.a4∘(fh))
+        μ = SachsVisc(fab.a2(fh),fab.a4(fh))
 
-        sol, res = solve_up_linear(zero(stk.X),τ,M,h,stk)
+
+
+        sol, res = solve_up_linear(zero(stk.X),μ,z,stk)
         uh, ph = sol
-        writevtk(get_triangulation(model),"parrallel0", cellfields=["uh"=>uh,"ph"=>ph,"z"=>z,"s"=>s,"a2"=>fab.a2∘(fh)])
+        # U = FESpace(Triangulation(model),ReferenceFE(lagrangian,VectorValue{2,Float64},2))
+        # uh = interpolate_everywhere(x->VectorValue(x[2],0.0),U)
+        writevtk(get_triangulation(model),"parrallel0", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
 
 
         for i = 1:nt
+            ∇x = transform_gradient(z)
+            εx(u) = symmetric_part(∇x(u))
+            C = εx(uh)
+            fh = fab.solve(fh,uh,C,z,dt,fab)
 
-            fh = fab.solve(fh,uh,τ(ε(uh)),M,h,dt,fab)
+            # z = solve_surface_combined(model,z,problem.b,dt,uh,solver,problem.❄️)
 
-            s = solve_surface3d(model,s,dt,uh,M,h,LUSolver(),problem.❄️)
-            s = impose_surface(s,model,d,LUSolver())
+            fh = fab.f0h
+            μ = SachsVisc(fab.a2(fh),fab.a4(fh))
 
-            M = Transform(ζ,b,s)
-            h = s - b
-            z = ζ*h + b
-
-            τ = FlowLaw(fab.a2∘(fh),fab.a4∘(fh))
-
-            sol, res = solve_up_linear(zero(stk.X),τ,M,h,stk)
-            uh, ph = sol
+            # sol, res = solve_up_linear(zero(stk.X),μ,z,stk)
+            # uh, ph = sol
 
             
-            writevtk(get_triangulation(model),"parrallel$i", cellfields=["uh"=>uh,"ph"=>ph,"z"=>z,"s"=>s,"a2"=>fab.a2∘(fh)])
+            writevtk(get_triangulation(model),"parrallel$i", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
         end
 
-    # end
+    end
 
 end
 

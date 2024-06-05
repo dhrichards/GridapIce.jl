@@ -139,7 +139,7 @@ function fabric_solve_dg(model,fh,uh,C,dt,fab)
 end
 
 
-function specfab_solve(fh,uh,C,ϕ,h,dt,fab)
+function specfab_solve(fh,uh,C,z,dt,fab)
 
     κ = 1e-2
     
@@ -147,7 +147,8 @@ function specfab_solve(fh,uh,C,ϕ,h,dt,fab)
     dΩ = Measure(fab.Ω,fab.degree)
 
     # Switch from transformed grid to real: (also requires multiplying by h as dz = h*dζ)
-
+    ∇x = transform_gradient(z)
+    ∫_Ωx = transform_integral(z)
 
 
 
@@ -158,8 +159,8 @@ function specfab_solve(fh,uh,C,ϕ,h,dt,fab)
 
     M = makeM(W,C,λ*SR,fab.f0h)
 
-    a(f,g) = ∫( h*(f⋅g + dt*(uh⋅∇ꜝ(ϕ,f))⋅g + dt*κ*(∇ꜝ(ϕ,f)⊙∇ꜝ(ϕ,g)) -dt*(M⋅f)⋅g) )dΩ # 
-    b(g) = ∫( h*fh⋅g )dΩ
+    a(f,g) = ∫_Ωx( f⋅g + dt*(uh⋅∇x(f))⋅g + dt*κ*(∇x(f)⊙∇x(g)) -dt*(M⋅f)⋅g )dΩ # 
+    b(g) = ∫_Ωx( fh⋅g )dΩ
 
     op = AffineFEOperator(a,b,fab.F,fab.G)
     fh = solve(fab.ls,op)
@@ -170,14 +171,15 @@ end
 
 
 
-function specfab_solve_real(fh,uh,C,T,h,dt,fab)
+function specfab_solve_real(fh,uh,C,z,dt,fab)
 
-    κ = 1e-2
+    κ = 1e-3
 
     dΩ = Measure(fab.Ω,fab.degree)
 
     # Switch from transformed grid to real: (also requires multiplying by h as dz = h*dζ)
-    ∇z = Transform_∇(T)
+    ∇x = transform_gradient(z)
+    h = det∇(z)
 
     fhr,fhi = fh
 
@@ -189,8 +191,8 @@ function specfab_solve_real(fh,uh,C,T,h,dt,fab)
     M = makeM(W,C,λ*SR,fhr)
     Mr = real(M); Mi = imag(M)
 
-    a((fr,fi),(gr,gi)) = ∫( h*(fr⋅gr + dt*(uh⋅∇z(fr))⋅gr + dt*κ*(∇z(fr)⊙∇z(gr)) -dt*(Mr⋅fr - Mi⋅fi)⋅gr) )dΩ +
-                        ∫( h*(fi⋅gi + dt*(uh⋅∇z(fi))⋅gi + dt*κ*(∇z(fi)⊙∇z(gi)) -dt*(Mr⋅fi + Mi⋅fr)⋅gi) )dΩ  
+    a((fr,fi),(gr,gi)) = ∫( h*(fr⋅gr + dt*(uh⋅∇x(fr))⋅gr + dt*κ*(∇x(fr)⊙∇x(gr)) -dt*(Mr⋅fr - Mi⋅fi)⋅gr) )dΩ +
+                        ∫( h*(fi⋅gi + dt*(uh⋅∇x(fi))⋅gi + dt*κ*(∇x(fi)⊙∇x(gi)) -dt*(Mr⋅fi + Mi⋅fr)⋅gi) )dΩ  
     l((gr,gi)) = ∫( h*(fhr⋅gr + fhi⋅gi) )dΩ
 
     op = AffineFEOperator(a,l,fab.F,fab.G)

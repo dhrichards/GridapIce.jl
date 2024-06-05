@@ -63,10 +63,9 @@ function solve_up(sol,μ,η,z,stk::Stokes)
     ∇x = transform_gradient(z)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u))
-
-    h = Zonly∘(∇(z))
+    ∫_Ωx = transform_integral(z)
         
-    res((u,p),(v,q)) = ∫(  h*(η∘(εx(u))*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p - v⋅f) )dΩ #+ ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
+    res((u,p),(v,q)) = ∫_Ωx( η∘(εx(u))*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p - v⋅f )dΩ #+ ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
     op = FEOperator(res,stk.X,stk.Y)
 
     sol, = solve!(sol,stk.solver,op)
@@ -74,9 +73,13 @@ function solve_up(sol,μ,η,z,stk::Stokes)
     return sol, res
 end
 
-function solve_up_linear(sol,μ,η,z,stk::Stokes)
+function solve_up_linear(μ,z,stk::Stokes)
 
+    U,P = stk.X; V,Q = stk.Y
     
+    mfs = Gridap.MultiField.BlockMultiFieldStyle()
+    X = MultiFieldFESpace([U,Q];style=mfs)
+    Y = MultiFieldFESpace([V,Q];style=mfs)
 
     dΩ = Measure(stk.Ω,stk.degree)
     dΓw = Measure(stk.Γw,stk.degree)
@@ -84,18 +87,19 @@ function solve_up_linear(sol,μ,η,z,stk::Stokes)
     f = stk.f; β = stk.β
 
     ∇x = transform_gradient(z)
+    ∫_Ωx = transform_integral(z)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u))
 
-    h = Zonly∘(∇(z))
+    a((u,p),(v,q)) = ∫_Ωx(  ((μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
+    b((v,q)) = ∫_Ωx( v⋅f )dΩ
 
-    a((u,p),(v,q)) = ∫(  h*((μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
-    b((v,q)) = ∫( h*v⋅f )dΩ
+    op = AffineFEOperator(a,b,X,Y)
+    # sol, = solve!(sol,stk.solver,op)
 
-    op = AffineFEOperator(a,b,stk.X,stk.Y)
-    sol, = solve!(sol,stk.solver,op)
-
-    return sol, res
+    
+    uh = block_solve(op,1.0e9,dΩ,U,Q)
+    return uh
 end
 
 
@@ -116,3 +120,32 @@ function FSSAsolve(sol⁺,res1,dt,s,stk)
     return sol⁺
 end
 
+function block_solve(op,α,dΩ,U,Q)
+    A, bb = get_matrix(op), get_vector(op);
+    Auu = blocks(A)[1,1]
+  
+    solver_u = LUSolver()
+    solver_p = LUSolver()
+    # solver_p = CGSolver(RichardsonSmoother(JacobiLinearSolver(),10,0.2);maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
+  
+  
+  
+    diag_blocks  = [LinearSystemBlock(),BiformBlock((p,q) -> ∫(-1.0/α*p*q)dΩ,Q,Q)]
+  
+    blockss = map(CartesianIndices((2,2))) do I
+      (I[1] == I[2]) ? diag_blocks[I[1]] : LinearSystemBlock()
+    end
+  
+    coeffs = [1.0 1.0;
+              0.0 1.0]
+    P = BlockTriangularSolver(blockss,[solver_u,solver_p],coeffs,:upper)
+    solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6) #,verbose=i_am_main(parts))
+    # solver = GMRESSolver(20,P;atol=1e-14,rtol=1.e-6) #,verbose=i_am_main(parts))
+    ns = numerical_setup(symbolic_setup(solver,A),A)
+  
+    x = Gridap.Algebra.allocate_in_domain(A); fill!(x,0.0)
+    solve!(x,ns,bb)
+  
+    uh = FEFunction(U,x)
+    return uh
+  end

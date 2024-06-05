@@ -53,7 +53,7 @@ struct ISMIPHOM <: Case
             dmasks = [(true,true,true)]
 
     
-        elseif experiment == :C
+        elseif experiment == :A
             H = 1e3
             L = (L,L)
             coords = (0,L[1],0,L[2],0,H)
