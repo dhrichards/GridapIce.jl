@@ -20,16 +20,17 @@ using GridapPETSc
 # options = "-ksp_type fgmres -pc_type lu -ksp_monitor"
 # use mumps, 
 # options = "-ksp_type fgmres -pc_type lu -pc_factor_mat_solver_type mumps -ksp_monitor"
-
+options = "-ksp_type cg -pc_type gamg -pc_factor_mat_solver_type mumps -ksp_monitor"
 #use cg with jacobi preconditioner
-options = "-ksp_type cg -pc_type jacobi -ksp_monitor"
+# options = "-ksp_type cg -pc_type jacobi -ksp_monitor"
+
 
 # Current state: runs but doesn't converge
 
 function main(rank_partition,distribute)
   parts  = distribute(LinearIndices((prod(rank_partition),)))
   GridapPETSc.with(args=split(options)) do
-    nc = (10,10)
+    nc = (50,50)
 
     model = CartesianDiscreteModel(parts,rank_partition, (0.0,1.0,0.0,1.0), nc )
     order = 2
@@ -109,12 +110,14 @@ function main(rank_partition,distribute)
     x = Gridap.Algebra.allocate_in_domain(A); fill!(x,0.0)
     solve!(x,ns,b)
 
-    uh = FEFunction(U,x)
+    print(sum(x))
+
+    uh = FEFunction(U,x) #-> gives error in mpi
 
 
 
 
-    writevtk(Ω,"stokes",cellfields=["uh"=>uh])
+    # writevtk(Ω,"stokes_p",cellfields=["uh"=>uh])
     # uh_exact = interpolate(u_exact,U)
     # eh = uh - uh_exact
     # E = sqrt(sum(∫(eh⋅eh)dΩ))
@@ -122,7 +125,7 @@ function main(rank_partition,distribute)
 end
 
 
-rank_partition = (2,2)
+rank_partition = (1,1)
 with_mpi() do distribute
   main(rank_partition,distribute)
 end

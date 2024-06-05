@@ -50,27 +50,17 @@ f = VectorValue(0.0,0.0)
 Ω = Triangulation(model)
 dΩ = Measure(Ω,qdegree)
 
-# ϵ = 1e-4; n = 3.0
-# η(ε) = (0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
-# dη(dε,ε) = (1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
+ϵ = 1e-4; n = 3.0
+η(ε) = (0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
+dη(dε,ε) = (1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
 
-# τ(ε) = η∘(ε)*ε
-# dτ(dε,ε) = dη∘(dε,ε)∘ε + η∘(ε)⊙dε
+τ(ε) = η∘(ε)*ε
+dτ(dε,ε) = dη∘(dε,ε)∘ε + η∘(ε)⊙dε
 
-# res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ
-# jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ
+res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ
+jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ
 
-# op = FEOperator(res,jac,X,Y)
-
-
-biform_u(u,v,dΩ) = ∫(ε(u)⊙ε(v))dΩ #+ graddiv(u,v,dΩ)
-biform((u,p),(v,q),dΩ) = biform_u(u,v,dΩ) - ∫(divergence(v)*p)dΩ - ∫(divergence(u)*q)dΩ
-liform((v,q),dΩ) = ∫(v⋅f)dΩ
-
-a(u,v) = biform(u,v,dΩ)
-l(v) = liform(v,dΩ)
-op = AffineFEOperator(a,l,X,Y)
-
+op = FEOperator(res,jac,X,Y)
 
 function block_solve(op,α,dΩ,U,Q)
   A, b = get_matrix(op), get_vector(op);
@@ -104,7 +94,7 @@ end
 
 # Postprocess
 uh = block_solve(op,α,dΩ,U,Q)
-print(sum(uh.free_values))
+
 
 
 writevtk(Ω,"stokes",cellfields=["uh"=>uh])

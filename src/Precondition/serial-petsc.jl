@@ -18,12 +18,14 @@ using GridapPETSc
 
 
 # options = "-ksp_type cg -pc_type gamg -ksp_monitor"
-# options = "-ksp_type fgmres -pc_type lu -ksp_monitor"
+# options = "-ksp_type cg -pc_type gamg -pc_factor_mat_solver_type mumps -ksp_monitor"
+
+options = "-ksp_type fgmres -pc_type lu -ksp_monitor"
 # use mumps for pressure, 
-options = "-ksp_type fgmres -pc_type lu -pc_factor_mat_solver_type mumps -ksp_monitor"
+# options = "-ksp_type fgmres -pc_type lu -pc_factor_mat_solver_type mumps -ksp_monitor"
 
 GridapPETSc.with(args=split(options)) do
-  nc = (100,100)
+  nc = (50,50)
 
   model = CartesianDiscreteModel( (0.0,1.0,0.0,1.0), nc )
   order = 2
@@ -105,6 +107,7 @@ GridapPETSc.with(args=split(options)) do
 
   uh = FEFunction(U,x)
 
+  # print(x)
 
 
 

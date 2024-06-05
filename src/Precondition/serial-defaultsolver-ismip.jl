@@ -16,9 +16,9 @@ using GridapSolvers.PatchBasedSmoothers
 using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangularSolver
 
 np = 1
-nc = (100,100)
+nc = (50,50)
 
-model = CartesianDiscreteModel( (0.0,1.0,0.0,1.0), nc )
+model = CartesianDiscreteModel( (0.0,1.0,0.0,1.0), nc, isperiodic=(true,false) )
 order = 2
 qdegree = 2*(order+1)
 Dc = length(nc)
@@ -27,11 +27,11 @@ reffe_u = ReferenceFE(lagrangian,VectorValue{2,Float64},order)
 reffe_p = ReferenceFE(lagrangian,Float64,order-1;space=:P)
 
 labels = get_face_labeling(model)
-add_tag_from_tags!(labels,"dir_top",[6,])
-add_tag_from_tags!(labels,"dir_walls",[1,2,3,4,5,7,8])
+add_tag_from_tags!(labels,"bottom",[5])
+add_tag_from_tags!(labels,"top",[6])
 
-V  = TestFESpace(model,reffe_u,dirichlet_tags=["dir_walls","dir_top"]);
-U = TrialFESpace(V,[VectorValue(0.0,0.0),VectorValue(1.0,0.0)]);
+V  = TestFESpace(model,reffe_u,dirichlet_tags=["bottom"]);
+U = TrialFESpace(V,[VectorValue(0.0,0.0)]);
 
 Q = TestFESpace(model,reffe_p;conformity=:L2,constraint=:zeromean)
 P = TrialFESpace(Q)
@@ -43,7 +43,8 @@ Y = MultiFieldFESpace([V,Q];style=mfs)
 
 α = 1e9
 # f = VectorValue(1.0,1.0)
-f = VectorValue(0.0,0.0)
+ρ = 9.138e-19; g = 9.7692e15; angle = 0.5
+f = VectorValue(ρ*g*sind(angle),-ρ*g*cosd(angle))
 # Π_Qh = LocalProjectionMap(QUAD,lagrangian,Float64,order-1;quad_order=qdegree,space=:P)
 # graddiv(u,v,dΩ) = ∫(α*Π_Qh(divergence(u))⋅Π_Qh(divergence(v)))dΩ
 
@@ -72,13 +73,13 @@ l(v) = liform(v,dΩ)
 op = AffineFEOperator(a,l,X,Y)
 
 
-function block_solve(op,α,dΩ,U,Q)
+# function block_solve(op,α,dΩ,U,Q)
   A, b = get_matrix(op), get_vector(op);
   Auu = blocks(A)[1,1]
 
   solver_u = LUSolver()
-  solver_p = LUSolver()
-  # solver_p = CGSolver(RichardsonSmoother(JacobiLinearSolver(),10,0.2);maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
+#   solver_p = LUSolver()
+  solver_p = CGSolver(RichardsonSmoother(JacobiLinearSolver(),10,0.2);maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
 
 
 
@@ -99,12 +100,12 @@ function block_solve(op,α,dΩ,U,Q)
   solve!(x,ns,b)
 
   uh = FEFunction(U,x)
-  return uh
-end
+#   return uh
+# end
 
 # Postprocess
-uh = block_solve(op,α,dΩ,U,Q)
-print(sum(uh.free_values))
+# uh = block_solve(op,α,dΩ,U,Q)
+
 
 
 writevtk(Ω,"stokes",cellfields=["uh"=>uh])
