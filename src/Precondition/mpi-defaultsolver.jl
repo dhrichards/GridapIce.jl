@@ -19,7 +19,6 @@ using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangula
 
 function main(rank_partition,distribute)
     parts  = distribute(LinearIndices((prod(rank_partition),)))
-
     nc = (10,10)
 
     model = CartesianDiscreteModel( parts,rank_partition,(0.0,1.0,0.0,1.0), nc )
@@ -46,26 +45,11 @@ function main(rank_partition,distribute)
     Y = MultiFieldFESpace([V,Q];style=mfs)
 
     α = 1e9
-    # f = VectorValue(1.0,1.0)
     f = VectorValue(0.0,0.0)
-    # Π_Qh = LocalProjectionMap(QUAD,lagrangian,Float64,order-1;quad_order=qdegree,space=:P)
-    # graddiv(u,v,dΩ) = ∫(α*Π_Qh(divergence(u))⋅Π_Qh(divergence(v)))dΩ
+
 
     Ω = Triangulation(model)
     dΩ = Measure(Ω,qdegree)
-
-    # ϵ = 1e-4; n = 3.0
-    # η(ε) = (0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
-    # dη(dε,ε) = (1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
-
-    # τ(ε) = η∘(ε)*ε
-    # dτ(dε,ε) = dη∘(dε,ε)∘ε + η∘(ε)⊙dε
-
-    # res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ
-    # jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ
-
-    # op = FEOperator(res,jac,X,Y)
-
 
     biform_u(u,v,dΩ) = ∫(ε(u)⊙ε(v))dΩ #+ graddiv(u,v,dΩ)
     biform((u,p),(v,q),dΩ) = biform_u(u,v,dΩ) - ∫(divergence(v)*p)dΩ - ∫(divergence(u)*q)dΩ
@@ -101,22 +85,13 @@ function main(rank_partition,distribute)
     x = Gridap.Algebra.allocate_in_domain(A); fill!(x,0.0)
     solve!(x,ns,b)
 
-    uh = FEFunction(U,x)
-
-    # Postprocess
-    uh = block_solve(op,α,dΩ,U,Q)
-
-
+    xh = FEFunction(X,x)
+    uh,ph = xh
 
     writevtk(Ω,"stokes",cellfields=["uh"=>uh])
 end
-# uh_exact = interpolate(u_exact,U)
-# eh = uh - uh_exact
-# E = sqrt(sum(∫(eh⋅eh)dΩ))
 
-
-
-nparts = (2,1)
+rank_partition = (2,2)
 with_mpi() do distribute
-    main(distribute,nparts)
+  main(rank_partition,distribute)
 end
