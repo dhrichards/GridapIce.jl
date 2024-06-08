@@ -1,4 +1,6 @@
 struct Stokes
+    n::Float64 # Power law exponent
+    B::Float64 # Rate factor
     D::Int # Dimension
     Td::Int # Number of tensor components
     order:: Int # Finite element order
@@ -12,7 +14,7 @@ struct Stokes
     f::VectorValue
     solver
 
-    function Stokes(model,problem,solver,order=2,degree=4)
+    function Stokes(model,n,B,problem,solver,order=2,degree=4)
         D = problem.D
         Td = (D==2 ? 3 : 6)
         
@@ -41,7 +43,7 @@ struct Stokes
         Γw =  BoundaryTriangulation(model,tags="bottom")
         Γs =  BoundaryTriangulation(model,tags="top")
 
-        return new(D,Td,order,degree,X,Y,Ω,Γw,Γs,problem.β,f,solver)
+        return new(n,B,D,Td,order,degree,X,Y,Ω,Γw,Γs,problem.β,f,solver)
     end
 
 
@@ -51,7 +53,7 @@ end
 
 
 
-function solve_up(sol,μ,η,z,stk::Stokes)
+function solve_up(sol,μ,z,stk::Stokes)
     
 
     dΩ = Measure(stk.Ω,stk.degree)
@@ -62,11 +64,22 @@ function solve_up(sol,μ,η,z,stk::Stokes)
     
     ∇x = transform_gradient(z)
     εx(u) = symmetric_part(∇x(u))
-    divx(u) = tr(∇x(u))
+    divx(u) = tr(∇x(u)) 
     ∫_Ωx = transform_integral(z)
+
+    n = stk.n; B = stk.B
+    η(ε) = B^(-1/n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n))
+    dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
+
+    
+    τ(ε) = η∘(ε)*μ⊙ε
+    dτ(dε,ε) = dη∘(dε,ε)*(μ⊙ε) + η∘(ε)*(μ⊙dε)
         
-    res((u,p),(v,q)) = ∫_Ωx( η∘(εx(u))*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p - v⋅f )dΩ #+ ∫( β*u⋅v )dΓw # maybe add minus sign to div u for
-    op = FEOperator(res,stk.X,stk.Y)
+    res((u,p),(v,q)) = ∫_Ωx( τ(εx(u))⊙εx(v) - divx(u)*q - divx(v)*p - v⋅f )dΩ #+ ∫_Ωx( β*u⋅v )dΓw # maybe add minus sign to div u for
+    jac((u,p),(du,dp),(v,q)) = ∫_Ωx(dτ(εx(du),εx(u))⊙εx(v) - divx(v)*dp - divx(du)*q)dΩ
+
+
+    op = FEOperator(res,jac,stk.X,stk.Y)
 
     sol, = solve!(sol,stk.solver,op)
 
@@ -84,14 +97,14 @@ function solve_up_linear(μ,z,stk::Stokes)
     dΩ = Measure(stk.Ω,stk.degree)
     dΓw = Measure(stk.Γw,stk.degree)
 
-    f = stk.f; β = stk.β
+    f = stk.f; β = stk.β; B = stk.B
 
     ∇x = transform_gradient(z)
     ∫_Ωx = transform_integral(z)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u))
 
-    a((u,p),(v,q)) = ∫_Ωx(  ((μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
+    a((u,p),(v,q)) = ∫_Ωx(  ((1/B)*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
     b((v,q)) = ∫_Ωx( v⋅f )dΩ
 
     op = AffineFEOperator(a,b,X,Y)

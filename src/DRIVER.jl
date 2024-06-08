@@ -36,23 +36,21 @@ using LineSearches: BackTracking
 nls = NLSolver(
   show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
 solver = FESolver(nls)
-stk = Stokes(model,problem,solver)
 
-Ecc = 1.0; Eca = 25.0; n = 3.0; B = 100.0
 
-η(ε) = B^(-1/n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n))
+Ecc = 1.0; Eca = 25.0; λ = 0.3
+
     
+# n=1.0; B = 2.1430373e-1
+stk = Stokes(model,3.0,100.0,problem,solver)
 
-
-
-
-fab = SpecFab(model,D,:H1implicit_real,1,0.3,4)
+fab = SpecFab(model,D,:H1implicit_real,1,λ,4)
 
 CFL = 0.1
 d = minimum(L./ncell)
 nt = 500
 
-z0(x) = x[2]*(problem.s(x)-problem.b(x))+problem.b(x) 
+z0(x) = x[end]*(problem.s(x)-problem.b(x))+problem.b(x) 
 
 
 function iterate()
@@ -62,8 +60,8 @@ function iterate()
     fh = fab.f0h
     μ = SachsVisc(fab.a2(fh),fab.a4(fh))
 
-    # sol, res = solve_up(zero(stk.X),μ,η,z,stk); uh, ph =sol
-    uh = solve_up_linear(μ,z,stk)
+    sol, res = solve_up(zero(stk.X),μ,z,stk); uh, ph =sol
+    # uh = solve_up_linear(B,μ,z,stk)
     dt = CFL*d/maximum(uh.free_values)
 
     # sol⁺ = FSSAsolve(zero(stk.X),res,dt,s,stk)
@@ -77,16 +75,16 @@ function iterate()
         print("Solving for fabric at i = $i\n")
         ∇x = transform_gradient(z)
         εx(u) = symmetric_part(∇x(u))
-        fh = fab.solve(fh,uh,εx(uh),z,dt,fab)
+        # fh = fab.solve(fh,uh,εx(uh),z,dt,fab)
 
         print("Solving for z at i = $i\n")
-        z = solve_surface_combined(model,z,problem.b,dt,uh,LUSolver(),problem.❄️)
+        z = solve_surface_combined(model,z,problem.b,dt,uh⁺,LUSolver(),problem.❄️)
         
 
         μ = SachsVisc(fab.a2(fh),fab.a4(fh))
         print("Solving for velocity at i = $i\n")
-        sol, res = solve_up(sol,μ,η,z,stk); uh, ph =sol
-        # uh = solve_up_linear(μ,z,stk)
+        sol, res = solve_up(sol,μ,z,stk); uh, ph =sol
+        # uh = solve_up_linear(B,μ,z,stk)
 
         dt = CFL*d/maximum(uh.free_values)
 

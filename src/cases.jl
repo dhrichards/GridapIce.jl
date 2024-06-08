@@ -18,7 +18,7 @@ struct ISMIPHOM <: Case
 
     function ISMIPHOM(experiment::Symbol,L::Float64)
 
-        s(x) = H
+        
         bB(x) = 0.5*H*sin(x[1]*2*pi/L)
         bC(x) = 0.5*H*sin(x[1]*2*pi/L)*sin(x[2]*2*pi/L)
         bD(x) = 0.0
@@ -27,6 +27,7 @@ struct ISMIPHOM <: Case
         βD(x) = 1e-3*(1.0 + sin(2*pi*x[1]/L))
 
         if experiment == :B
+            s = x -> H
             H = 1e3
             L = (L)
             coords = (0,L,0,H)
@@ -40,6 +41,7 @@ struct ISMIPHOM <: Case
             dmasks = [(true,true)]
 
         elseif experiment == :B_3D
+            s = x -> H
             H = 1e3
             L = (L,1e3)
             coords = (0,L[1],0,L[2],0,H)
@@ -54,6 +56,7 @@ struct ISMIPHOM <: Case
 
     
         elseif experiment == :A
+            s = x -> H
             H = 1e3
             L = (L,L)
             coords = (0,L[1],0,L[2],0,H)
@@ -67,6 +70,7 @@ struct ISMIPHOM <: Case
             dmasks = [(true,true,true)]
 
         elseif experiment == :D
+            s = x -> H
             H = 1e3
             L = (L)
             coords = (0,L,0,H)
@@ -78,6 +82,20 @@ struct ISMIPHOM <: Case
             dtags = []
             ubcs = []
             dmasks = []
+        elseif experiment == :F1
+            s = x -> H
+            H = 1e3
+            L = (L,L)
+            coords = (0,L,0,L,0,H)
+            D = 3
+            σ = 10e3; a₀ = 100.0
+            b = x -> a₀*(exp(-(x[1]^2 + x[2]^2)/σ^2))
+            β = x -> 0.0
+            α = 3.0 # degrees
+            ❄️ = 0.0
+            dtags = ["bottom"]
+            ubcs = [VectorValue(0.0,0.0,0.0)]
+            dmasks = [(true,true,true)]
         end
 
         

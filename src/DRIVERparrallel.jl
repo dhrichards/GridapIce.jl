@@ -19,6 +19,7 @@ include("meshes.jl")
 include("coordinatetransform.jl")
 include("stokessolvers.jl")
 include("specfab.jl")
+include("fixes.jl")
 
 #Run with below command from the root directory
 # ./mpiexecjl --project=. -n 2 julia src/DRIVERparrallel.jl
@@ -32,7 +33,7 @@ options = "-ksp_type cg -pc_type gamg -pc_factor_mat_solver_type mumps -ksp_moni
 function main(rank_partition,distribute)
     
     parts  = distribute(LinearIndices((prod(rank_partition),)))
-    GridapPETSc.with(args=split(options)) do
+    # GridapPETSc.with(args=split(options)) do
 
         problem = ISMIPHOM(:B,1.0)
         L = (5e3,1e3)
@@ -43,10 +44,15 @@ function main(rank_partition,distribute)
         model = CartesianDiscreteModel(parts,rank_partition,(0,1,0,1),ncell,isperiodic=(true,false))
         labels = get_labels(model,D)
 
-        solver = PETScLinearSolver()
+        # solver = PETScLinearSolver()
+        nls = NLSolver(
+        show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
+        nlsolver = FESolver(nls)
+        solver = LUSolver()
+
         
-        stk = Stokes(model,problem,solver)
-        Ecc = 1.0; Eca = 25.0; n = 1.0; B = 100.0
+        stk = Stokes(model,3.0,100,problem,nlsolver)
+        Ecc = 1.0; Eca = 25.0
 
         fab = SpecFab(model,D,:H1implicit_real,1,0.3,4,solver)
 
@@ -56,7 +62,7 @@ function main(rank_partition,distribute)
         nt = 100
 
         
-        z0(x) = x[2]*(problem.s(x[1])-problem.b(x[1]))+problem.b(x[1]) 
+        z0(x) = x[end]*(problem.s(x[1])-problem.b(x[1]))+problem.b(x[1]) 
         
 
         S = FESpace(Triangulation(model),ReferenceFE(lagrangian,Float64,2),conformity=:H1)
@@ -65,10 +71,7 @@ function main(rank_partition,distribute)
         fh = fab.f0h
         μ = SachsVisc(fab.a2(fh),fab.a4(fh))
 
-
-
-        sol, res = solve_up_linear(zero(stk.X),μ,z,stk)
-        uh, ph = sol
+        sol, res = solve_up(zero(stk.X),μ,z,stk); uh, ph =sol
         # U = FESpace(Triangulation(model),ReferenceFE(lagrangian,VectorValue{2,Float64},2))
         # uh = interpolate_everywhere(x->VectorValue(x[2],0.0),U)
         writevtk(get_triangulation(model),"parrallel0", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
@@ -80,26 +83,22 @@ function main(rank_partition,distribute)
             C = εx(uh)
             fh = fab.solve(fh,uh,C,z,dt,fab)
 
-            # z = solve_surface_combined(model,z,problem.b,dt,uh,solver,problem.❄️)
+            z = solve_surface_combined(model,z,problem.b,dt,uh,solver,problem.❄️)
 
-            fh = fab.f0h
             μ = SachsVisc(fab.a2(fh),fab.a4(fh))
+            sol, res = solve_up(sol,μ,z,stk); uh, ph =sol
 
-            # sol, res = solve_up_linear(zero(stk.X),μ,z,stk)
-            # uh, ph = sol
-
-            
             writevtk(get_triangulation(model),"parrallel$i", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
         end
 
-    end
+    # end
 
 end
 
 
 
 
-rank_partition = (2,1)
+rank_partition = (1,1)
 with_mpi() do distribute
     main(rank_partition,distribute)
 end
