@@ -2,6 +2,7 @@ struct Stokes
     n::Float64 # Power law exponent
     B::Float64 # Rate factor
     D::Int # Dimension
+    Lstretch::Union{Float64,Tuple} 
     Td::Int # Number of tensor components
     order:: Int # Finite element order
     degree::Int # Quadrature degree
@@ -14,7 +15,7 @@ struct Stokes
     f::VectorValue
     solver
 
-    function Stokes(model,n,B,problem,solver,order=2,degree=4)
+    function Stokes(model,n,B,problem,solver,Lstretch=1.0,order=2,degree=4)
         D = problem.D
         Td = (D==2 ? 3 : 6)
         
@@ -43,7 +44,7 @@ struct Stokes
         Γw =  BoundaryTriangulation(model,tags="bottom")
         Γs =  BoundaryTriangulation(model,tags="top")
 
-        return new(n,B,D,Td,order,degree,X,Y,Ω,Γw,Γs,problem.β,f,solver)
+        return new(n,B,D,Lstretch,Td,order,degree,X,Y,Ω,Γw,Γs,problem.β,f,solver)
     end
 
 
@@ -62,10 +63,10 @@ function solve_up(sol,μ,z,stk::Stokes)
     f = stk.f; β = stk.β
 
     
-    ∇x = transform_gradient(z)
+    ∇x = transform_gradient(z)#,stk.Lstretch)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u)) 
-    ∫_Ωx = transform_integral(z)
+    ∫_Ωx = transform_integral(z)#,stk.Lstretch)
 
     n = stk.n; B = stk.B
     η(ε) = B^(-1/n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n))
@@ -86,7 +87,7 @@ function solve_up(sol,μ,z,stk::Stokes)
     return sol, res
 end
 
-function solve_up_linear(μ,z,stk::Stokes)
+function solve_up_linear(μ,z,stk::Stokes,dt=0.0)
 
     U,P = stk.X; V,Q = stk.Y
     
@@ -96,22 +97,28 @@ function solve_up_linear(μ,z,stk::Stokes)
 
     dΩ = Measure(stk.Ω,stk.degree)
     dΓw = Measure(stk.Γw,stk.degree)
+    dΓs = Measure(stk.Γs,stk.degree)
+    n_s = normal_vector(z)
 
     f = stk.f; β = stk.β; B = stk.B
 
-    ∇x = transform_gradient(z)
-    ∫_Ωx = transform_integral(z)
+    ∇x = transform_gradient(z)#,stk.Lstretch)
+    ∫_Ωx = transform_integral(z)#,stk.Lstretch)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u))
 
-    a((u,p),(v,q)) = ∫_Ωx(  ((1/B)*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
+    a_stokes((u,p),(v,q)) = ∫_Ωx(  ((1/B)*(μ⊙εx(u))⊙εx(v) - divx(u)*q - divx(v)*p) )dΩ #+ ∫( β*u⋅v )dΓw 
+    a_fssa((u,p),(v,q)) = ∫_Ωx(  dt*(u⋅n_s)*(f⋅v) )dΓs
+
+    a((u,p),(v,q)) = a_stokes((u,p),(v,q)) + a_fssa((u,p),(v,q))
+    
     b((v,q)) = ∫_Ωx( v⋅f )dΩ
 
     op = AffineFEOperator(a,b,X,Y)
     # sol, = solve!(sol,stk.solver,op)
 
     
-    uh = block_solve(op,1.0e9,dΩ,U,Q)
+    uh = block_solve(op,1.0e2,dΩ,X,Q)
     return uh
 end
 
@@ -133,7 +140,7 @@ function FSSAsolve(sol⁺,res1,dt,s,stk)
     return sol⁺
 end
 
-function block_solve(op,α,dΩ,U,Q)
+function block_solve(op,α,dΩ,X,Q)
     A, bb = get_matrix(op), get_vector(op);
     Auu = blocks(A)[1,1]
   
@@ -159,6 +166,7 @@ function block_solve(op,α,dΩ,U,Q)
     x = Gridap.Algebra.allocate_in_domain(A); fill!(x,0.0)
     solve!(x,ns,bb)
   
-    uh = FEFunction(U,x)
+    xh = FEFunction(X,x)
+    uh,ph = xh
     return uh
   end

@@ -7,8 +7,15 @@ using GridapDistributed
 using GridapPETSc
 using GridapPETSc: PETSC
 using PartitionedArrays
+using FillArrays, BlockArrays
 using LineSearches: BackTracking
 using Gridap.Arrays
+using GridapSolvers
+using GridapSolvers.LinearSolvers
+using GridapSolvers.MultilevelTools
+using GridapSolvers.PatchBasedSmoothers
+using GridapSolvers.NonlinearSolvers
+using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangularSolver, NonlinearSystemBlock, TriformBlock
 include("cases.jl")
 include("Rheology/mandel.jl")
 include("tensorfunctions.jl")
@@ -27,78 +34,80 @@ include("fixes.jl")
 # use mumps
 options = "-ksp_type cg -pc_type gamg -pc_factor_mat_solver_type mumps -ksp_monitor"
 
+L = (100e3,100e3)
 # use complex numbers
 # options = "-ksp_type fgmres -pc_type lu -ksp_monitor"
 # function main(ranks)
 function main(rank_partition,distribute)
     
     parts  = distribute(LinearIndices((prod(rank_partition),)))
-    # GridapPETSc.with(args=split(options)) do
+    GridapPETSc.with(args=split(options)) do
 
-        problem = ISMIPHOM(:B,1.0)
-        L = (5e3,1e3)
+        problem = ISMIPHOM(:F1)
+        L = (100e3,100e3)
+        ncell = (20,20,5)
+        domain = (problem.D == 2) ? (0,1,0,1) : (0,1,0,1,0,1)
+        domain = (-0.5,0.5,-0.5,0.5,0,1)
 
-        D = problem.D
-        ncell = (32,16)
+        model = CartesianDiscreteModel(parts,rank_partition,domain,ncell,isperiodic=problem.periodicity)
+        labels = get_labels(model,problem.D)
 
-        model = CartesianDiscreteModel(parts,rank_partition,(0,1,0,1),ncell,isperiodic=(true,false))
-        labels = get_labels(model,D)
-
-        # solver = PETScLinearSolver()
-        nls = NLSolver(
-        show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
-        nlsolver = FESolver(nls)
-        solver = LUSolver()
+        solver = PETScLinearSolver()
+        # solver = LUSolver()
 
         
-        stk = Stokes(model,3.0,100,problem,nlsolver)
+        stk = Stokes(model,1.0,2.1430373e-1,problem,solver,L)
         Ecc = 1.0; Eca = 25.0
 
-        fab = SpecFab(model,D,:H1implicit_real,1,0.3,4,solver)
+        fab = SpecFab(model,problem.D,:H1implicit_real,1,0.3,2,solver)
 
-        CFL = 1.0
-        d = problem.L[1]/ncell[1]
-        dt = CFL*d/1.0
-        nt = 100
-
-        
-        z0(x) = x[end]*(problem.s(x[1])-problem.b(x[1]))+problem.b(x[1]) 
+        CFL = 0.2
+        d = minimum((L...,problem.H)./ncell)
+        dt = CFL*d/100.0
+        nt = 500
         
 
-        S = FESpace(Triangulation(model),ReferenceFE(lagrangian,Float64,2),conformity=:H1)
-        z = interpolate_everywhere(z0,S)
+        
+        z = init_z(model,problem.b,problem.s)
 
         fh = fab.f0h
         μ = SachsVisc(fab.a2(fh),fab.a4(fh))
 
-        sol, res = solve_up(zero(stk.X),μ,z,stk); uh, ph =sol
+        # sol, res = solve_up(zero(stk.X),μ,z,stk); uh, ph =sol
+        uh = solve_up_linear(μ,z,stk)
+
+        #gather
+        # uh_max = 
+
         # U = FESpace(Triangulation(model),ReferenceFE(lagrangian,VectorValue{2,Float64},2))
         # uh = interpolate_everywhere(x->VectorValue(x[2],0.0),U)
-        writevtk(get_triangulation(model),"parrallel0", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
+        writevtk(get_triangulation(model),"results/parrallel0", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
 
 
         for i = 1:nt
-            ∇x = transform_gradient(z)
-            εx(u) = symmetric_part(∇x(u))
-            C = εx(uh)
-            fh = fab.solve(fh,uh,C,z,dt,fab)
+            # ∇x = transform_gradient(z)
+            # εx(u) = symmetric_part(∇x(u))
+            # C = εx(uh)
+            # fh = fab.solve(fh,uh,C,z,dt,fab)
 
-            z = solve_surface_combined(model,z,problem.b,dt,uh,solver,problem.❄️)
+            solve_z!(z,model,problem.b,dt,uh,problem.❄️,solver)
 
-            μ = SachsVisc(fab.a2(fh),fab.a4(fh))
-            sol, res = solve_up(sol,μ,z,stk); uh, ph =sol
+            # μ = SachsVisc(fab.a2(fh),fab.a4(fh))
+            # sol, res = solve_up(sol,μ,z,stk); uh, ph =sol
 
-            writevtk(get_triangulation(model),"parrallel$i", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
+            uh = solve_up_linear(μ,z,stk)
+
+            writevtk(get_triangulation(model),"results/parrallel$i", cellfields=["uh"=>uh,"z"=>z,"a2"=>fab.a2(fh)])
         end
 
-    # end
+    end
 
 end
 
 
 
 
-rank_partition = (1,1)
+rank_partition = (1,1,4)
 with_mpi() do distribute
     main(rank_partition,distribute)
 end
