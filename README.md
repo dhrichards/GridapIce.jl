@@ -1,16 +1,12 @@
-# GridapIce
+# GridapIce 🚧🚧 Work in Progress 🚧🚧
 
+This package aims to solve the full-stokes equations for ice flow, with a variety of anisotropic tensor rheologies and coupled to fabric evolution and free surface evolution. It is currently working in serial with the aim of working in parallel.
 
-## Currently working:
- - Linear stokes with precondtioner
- - The above with PETSc in serial
 
 ## To do:
- - Precondtioned linear stokes with PETSc in parallel - runs but crashes atm
- - Nonlinear stokes with PETSc in serial
- - Move mesh in parralel
-
-
+ - Preconditioner for power-law rheology to run in parralel
+ - Periodic BCs in parralel
+ - Tests
 
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://dhrichards.github.io/GridapIce.jl/stable/)
