@@ -13,13 +13,14 @@ using GridapSolvers
 using GridapSolvers.LinearSolvers
 using GridapSolvers.MultilevelTools
 using GridapSolvers.PatchBasedSmoothers
-using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangularSolver
+using GridapSolvers.NonlinearSolvers
+using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangularSolver, NonlinearSystemBlock, TriformBlock
 
 np = 1
-nc = (100,100)
+nc = (30,30)
 
 model = CartesianDiscreteModel( (0.0,1.0,0.0,1.0), nc )
-order = 2
+order = 3
 qdegree = 2*(order+1)
 Dc = length(nc)
 
@@ -29,6 +30,8 @@ reffe_p = ReferenceFE(lagrangian,Float64,order-1;space=:P)
 labels = get_face_labeling(model)
 add_tag_from_tags!(labels,"dir_top",[6,])
 add_tag_from_tags!(labels,"dir_walls",[1,2,3,4,5,7,8])
+
+
 
 V  = TestFESpace(model,reffe_u,dirichlet_tags=["dir_walls","dir_top"]);
 U = TrialFESpace(V,[VectorValue(0.0,0.0),VectorValue(1.0,0.0)]);
@@ -40,64 +43,70 @@ P = TrialFESpace(Q)
 mfs = Gridap.MultiField.BlockMultiFieldStyle()
 X = MultiFieldFESpace([U,Q];style=mfs)
 Y = MultiFieldFESpace([V,Q];style=mfs)
+# X = MultiFieldFESpace([U,Q])
+# Y = MultiFieldFESpace([V,Q])
 
-α = 1e9
-# f = VectorValue(1.0,1.0)
 f = VectorValue(0.0,0.0)
-# Π_Qh = LocalProjectionMap(QUAD,lagrangian,Float64,order-1;quad_order=qdegree,space=:P)
-# graddiv(u,v,dΩ) = ∫(α*Π_Qh(divergence(u))⋅Π_Qh(divergence(v)))dΩ
 
 Ω = Triangulation(model)
 dΩ = Measure(Ω,qdegree)
 
-ϵ = 1e-4; n = 3.0
-η(ε) = (0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
-dη(dε,ε) = (1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
+α = 1.e2
+poly = (Dc==2) ? QUAD : HEX
+Π_Qh = LocalProjectionMap(poly,lagrangian,Float64,order-1;quad_order=qdegree,space=:P)
+graddiv(u,v,dΩ) = ∫(α*Π_Qh(divergence(u))⋅Π_Qh(divergence(v)))dΩ
+
+
+ϵ = 1e-4; n = 3.0; B = 100.0
+η(ε) = B^(-1/n)*(0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
+dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
+
 
 τ(ε) = η∘(ε)*ε
-dτ(dε,ε) = dη∘(dε,ε)∘ε + η∘(ε)⊙dε
+dτ(dε,ε) = dη∘(dε,ε)*ε + η∘(ε)*dε
+dgraddiv(du,u,v,dΩ) = ∫(α*Π_Qh(divergence(du))⋅Π_Qh(divergence(v)))dΩ
 
-res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ
-jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ
+
+
+res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ + graddiv(u,v,dΩ)
+jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ + dgraddiv(du,u,v,dΩ)
 
 op = FEOperator(res,jac,X,Y)
 
-function block_solve(op,α,dΩ,U,Q)
-  A, b = get_matrix(op), get_vector(op);
-  Auu = blocks(A)[1,1]
+# using LineSearches: BackTracking
+# nls = NLSolver(
+#   show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
+# solver_test = FESolver(nls)
+# sol = solve(solver_test,op)
+# uh, ph = sol
+# writevtk(Ω,"stokes",cellfields=["uh"=>uh])
 
-  solver_u = LUSolver()
-  solver_p = LUSolver()
-  # solver_p = CGSolver(RichardsonSmoother(JacobiLinearSolver(),10,0.2);maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
 
+solver_u = LUSolver()
+solver_p = LUSolver()
+# solver_p = CGSolver(JacobiLinearSolver();maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
+  
 
+# invη(ε,p,q) = -1.0*p*q*B^(1/n)*(0.5*ε⊙ε + ϵ^2)^((n+1)/(2*n))
+η_(ε) = η∘(ε)
 
-  diag_blocks  = [LinearSystemBlock(),BiformBlock((p,q) -> ∫(-1.0/α*p*q)dΩ,Q,Q)]
+# diag_blocks = [NonlinearSystemBlock(),BiformBlock((p,q) -> ∫(-1.0/α*p*q)dΩ,Q,Q)]
+diag_blocks  = [NonlinearSystemBlock(),TriformBlock(((u,p),dp,dq) -> ∫(-1.0/α*dp*dq/η_(ε(u)))dΩ,Y,Q,Q)]
 
-  bblocks = map(CartesianIndices((2,2))) do I
-    (I[1] == I[2]) ? diag_blocks[I[1]] : LinearSystemBlock()
-  end
-
-  coeffs = [1.0 1.0;
-            0.0 1.0]
-  P = BlockTriangularSolver(bblocks,[solver_u,solver_p],coeffs,:upper)
-  solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6) #,verbose=i_am_main(parts))
-  # solver = GMRESSolver(20,P;atol=1e-14,rtol=1.e-6) #,verbose=i_am_main(parts))
-  ns = numerical_setup(symbolic_setup(solver,A),A)
-
-  x = Gridap.Algebra.allocate_in_domain(A); fill!(x,0.0)
-  solve!(x,ns,b)
-
-  uh = FEFunction(U,x)
-  return uh
+bblocks = map(CartesianIndices((2,2))) do I
+  (I[1] == I[2]) ? diag_blocks[I[1]] : LinearSystemBlock()
 end
 
-# Postprocess
-uh = block_solve(op,α,dΩ,U,Q)
+coeffs = [1.0 1.0;
+          0.0 1.0]
+P = BlockTriangularSolver(bblocks,[solver_u,solver_p],coeffs,:upper)
+solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6)
 
+nlsolver = NewtonSolver(solver;maxiter=50,atol=1e-14,rtol=1.e-7,verbose=true)
 
+xh = solve(nlsolver,op)
+
+uh, ph = xh
 
 writevtk(Ω,"stokes",cellfields=["uh"=>uh])
-# uh_exact = interpolate(u_exact,U)
-# eh = uh - uh_exact
-# E = sqrt(sum(∫(eh⋅eh)dΩ))
+
