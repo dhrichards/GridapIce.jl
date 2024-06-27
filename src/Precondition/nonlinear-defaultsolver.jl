@@ -68,11 +68,12 @@ dgraddiv(du,u,v,dΩ) = ∫(α*Π_Qh(divergence(du))⋅Π_Qh(divergence(v)))dΩ
 
 
 
-res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ + graddiv(u,v,dΩ)
-jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ + dgraddiv(du,u,v,dΩ)
+res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ #+ graddiv(u,v,dΩ)
+jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ #+ dgraddiv(du,u,v,dΩ)
 
 op = FEOperator(res,jac,X,Y)
 
+## Check everything above is correct
 # using LineSearches: BackTracking
 # nls = NLSolver(
 #   show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
@@ -84,27 +85,31 @@ op = FEOperator(res,jac,X,Y)
 
 solver_u = LUSolver()
 solver_p = LUSolver()
+# solver_p = CGSolver(JacobiLinearSolver();maxiter=30,atol=1e-14,rtol=1.e-6,verbose=false)
+
 # solver_p = CGSolver(JacobiLinearSolver();maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
   
 
 # invη(ε,p,q) = -1.0*p*q*B^(1/n)*(0.5*ε⊙ε + ϵ^2)^((n+1)/(2*n))
 η_(ε) = η∘(ε)
 
-# diag_blocks = [NonlinearSystemBlock(),BiformBlock((p,q) -> ∫(-1.0/α*p*q)dΩ,Q,Q)]
-diag_blocks  = [NonlinearSystemBlock(),TriformBlock(((u,p),dp,dq) -> ∫(-1.0/α*dp*dq/η_(ε(u)))dΩ,Y,Q,Q)]
+TriForm = TriformBlock(((u,p),dp,q) -> ∫(-1.0/α*dp*q/η_(ε(u)))dΩ,X,Q,Q)
+bblocks  = [NonlinearSystemBlock() LinearSystemBlock();
+            LinearSystemBlock()    TriForm]
 
-bblocks = map(CartesianIndices((2,2))) do I
-  (I[1] == I[2]) ? diag_blocks[I[1]] : LinearSystemBlock()
-end
 
 coeffs = [1.0 1.0;
           0.0 1.0]
 P = BlockTriangularSolver(bblocks,[solver_u,solver_p],coeffs,:upper)
-solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6)
 
+
+solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6)
 nlsolver = NewtonSolver(solver;maxiter=50,atol=1e-14,rtol=1.e-7,verbose=true)
 
-xh = solve(nlsolver,op)
+
+xh = interpolate([x->VectorValue(x[2],0.0),0.0],X)
+# xh = solve(nlsolver,op)
+solve!(xh,nlsolver,op)
 
 uh, ph = xh
 
