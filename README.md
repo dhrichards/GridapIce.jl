@@ -4,8 +4,7 @@ This package aims to solve the full-stokes equations for ice flow, with a variet
 
 
 ## To do:
- - Preconditioner for power-law rheology to run in parralel
- - Periodic BCs in parralel
+ - Preconditioner for power-law rheology to run in parallel
  - Tests
 
 
