@@ -82,7 +82,6 @@ op = FEOperator(res,jac,X,Y)
 # uh, ph = sol
 # writevtk(Ω,"stokes",cellfields=["uh"=>uh])
 
-
 solver_u = LUSolver()
 solver_p = LUSolver()
 # solver_p = CGSolver(JacobiLinearSolver();maxiter=30,atol=1e-14,rtol=1.e-6,verbose=false)
@@ -115,3 +114,9 @@ uh, ph = xh
 
 writevtk(Ω,"stokes",cellfields=["uh"=>uh])
 
+
+## @santiagobadia: Alternative to use preconds + line search
+nls = NLSolver(solver; show_trace=true, method=:newton, iterations=50, xtol=1e-8, ftol=1e-8, linesearch=BackTracking())
+solver_test = FESolver(nls)
+sol = solve(solver_test,op)
+uh, ph = sol
