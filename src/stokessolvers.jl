@@ -1,8 +1,6 @@
 struct Stokes
-    n::Float64 # Power law exponent
-    B::Float64 # Rate factor
     D::Int # Dimension
-    Lstretch::Union{Float64,Tuple} 
+    Lstretch::Union{CellField,GridapDistributed.DistributedCellField} 
     Td::Int # Number of tensor components
     order:: Int # Finite element order
     degree::Int # Quadrature degree
@@ -15,9 +13,10 @@ struct Stokes
     f::VectorValue
     solver
 
-    function Stokes(model,n,B,problem,solver,Lstretch=1.0,order=2,degree=4)
+    function Stokes(model,problem,solver,L,order=2,degree=4)
         D = problem.D
         Td = (D==2 ? 3 : 6)
+        Lstretch = CellField(VectorValue(L),Triangulation(model))
         
         ρ = 9.138e-19; g = 9.7692e15
         if D == 2
@@ -44,7 +43,7 @@ struct Stokes
         Γw =  BoundaryTriangulation(model,tags="bottom")
         Γs =  BoundaryTriangulation(model,tags="top")
 
-        return new(n,B,D,Lstretch,Td,order,degree,X,Y,Ω,Γw,Γs,problem.β,f,solver)
+        return new(D,Lstretch,Td,order,degree,X,Y,Ω,Γw,Γs,problem.β,f,solver)
     end
 
 
@@ -54,7 +53,7 @@ end
 
 
 
-function solve_up(sol,μ,z,stk::Stokes)
+function solve_up(sol,fh,z,stk::Stokes,rheo)
     
 
     dΩ = Measure(stk.Ω,stk.degree)
@@ -63,18 +62,14 @@ function solve_up(sol,μ,z,stk::Stokes)
     f = stk.f; β = stk.β
 
     
-    ∇x = transform_gradient(z)#,stk.Lstretch)
+    ∇x = transform_gradient(z,stk.Lstretch)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u)) 
-    ∫_Ωx = transform_integral(z)#,stk.Lstretch)
-
-    n = stk.n; B = stk.B
-    η(ε) = B^(-1/n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n))
-    dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
+    ∫_Ωx = transform_integral(z,stk.Lstretch)
 
     
-    τ(ε) = η∘(ε)*μ⊙ε
-    dτ(dε,ε) = dη∘(dε,ε)*(μ⊙ε) + η∘(ε)*(μ⊙dε)
+    τ(ε) = rheo.η∘(ε)*rheo.με(fh,ε)
+    dτ(dε,ε) = rheo.dη∘(dε,ε)*rheo.με(fh,ε) + rheo.η∘(ε)*rheo.d_με(fh,dε,ε)
         
     res((u,p),(v,q)) = ∫_Ωx( τ(εx(u))⊙εx(v) - divx(u)*q - divx(v)*p - v⋅f )dΩ #+ ∫_Ωx( β*u⋅v )dΓw # maybe add minus sign to div u for
     jac((u,p),(du,dp),(v,q)) = ∫_Ωx(dτ(εx(du),εx(u))⊙εx(v) - divx(v)*dp - divx(du)*q)dΩ
@@ -102,8 +97,8 @@ function solve_up_linear(μ,z,stk::Stokes,dt=0.0)
 
     f = stk.f; β = stk.β; B = stk.B
 
-    ∇x = transform_gradient(z)#,stk.Lstretch)
-    ∫_Ωx = transform_integral(z)#,stk.Lstretch)
+    ∇x = transform_gradient(z,stk.Lstretch)
+    ∫_Ωx = transform_integral(z,stk.Lstretch)
     εx(u) = symmetric_part(∇x(u))
     divx(u) = tr(∇x(u))
 
@@ -118,8 +113,8 @@ function solve_up_linear(μ,z,stk::Stokes,dt=0.0)
     # sol, = solve!(sol,stk.solver,op)
 
     
-    uh = block_solve(op,1.0e2,dΩ,X,Q)
-    return uh
+    uh,ph = block_solve(op,1.0e2,dΩ,X,Q)
+    return uh,ph
 end
 
 
@@ -168,5 +163,5 @@ function block_solve(op,α,dΩ,X,Q)
   
     xh = FEFunction(X,x)
     uh,ph = xh
-    return uh
+    return uh,ph
   end

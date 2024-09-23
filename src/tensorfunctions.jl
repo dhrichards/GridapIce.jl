@@ -1,4 +1,4 @@
-
+include("Rheology/mandel.jl")
 
 function Π(f::CellField)
     return Π_op∘f
@@ -123,6 +123,15 @@ function imag(T::Union{TensorValue})
     return TensorValue(imag.(T.data))
 end
 
+# function symmetric_part(T::TensorValue{2,2,Float64,4})
+#     return SymTensorValue(T[1,1],0.5*(T[1,2]+T[2,1]),T[2,2])
+# end
+
+# function symmetric_part(T::TensorValue{3,3,Float64,9})
+#     return SymTensorValue(T[1,1],0.5*(T[1,2]+T[2,1]),0.5*(T[1,3]+T[3,1]),
+#                                                 T[2,2],0.5*(T[2,3]+T[3,2]),
+#                                                                     T[3,3])
+# end
 
 
 # inv∇(f) = Operation(inv_op)(∇(f))
@@ -139,3 +148,18 @@ end
 #     det = a*d - b*c
 #     return TensorValue(d/det, -b/det, -c/det, a/det)
 # end
+
+
+
+function symm_op(A::TensorValue{2,2})
+    return SymTensorValue(A[1,1],0.5*(A[1,2]+A[2,1]),A[2,2])
+end
+
+function symm_op(A::TensorValue{3,3})
+    return SymTensorValue(A[1,1],0.5*(A[1,2]+A[2,1]),0.5*(A[1,3]+A[3,1]),A[2,2],0.5*(A[2,3]+A[3,2]),A[3,3])
+end
+
+function symm_op(A::SymTensorValue)
+    return A
+end
+

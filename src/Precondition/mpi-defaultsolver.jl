@@ -16,36 +16,50 @@ using GridapSolvers.MultilevelTools
 using GridapSolvers.PatchBasedSmoothers
 using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangularSolver
 
+function add_labels_2d!(labels)
+  add_tag_from_tags!(labels,"top",[3,4,6])
+  add_tag_from_tags!(labels,"bottom",[1,2,5])
+  add_tag_from_tags!(labels,"walls",[7,8])
+end
+
+function add_labels_3d!(labels)
+  add_tag_from_tags!(labels,"top",[5,6,7,8,11,12,15,16,22])
+  add_tag_from_tags!(labels,"bottom",[1,2,3,4,9,10,13,14,21])
+  add_tag_from_tags!(labels,"walls",[17,18,23,25,26])
+end
+
 
 function main(rank_partition,distribute)
+    Dc = length(rank_partition)
     parts  = distribute(LinearIndices((prod(rank_partition),)))
-    nc = (10,10)
+    nc = (Dc ==2 ) ? (10,10) : (10,10,10)
 
-    model = CartesianDiscreteModel( parts,rank_partition,(0.0,1.0,0.0,1.0), nc )
+    domain = (Dc == 2) ? (0,1,0,1) : (0,1,0,1,0,1)
+
+    model = CartesianDiscreteModel(parts,rank_partition,domain,nc,isperiodic=(true,true,false))
+    add_labels! = (Dc == 2) ? add_labels_2d! : add_labels_3d!
+    add_labels!(get_face_labeling(model))
+  
+    # FE spaces
     order = 2
     qdegree = 2*(order+1)
-    Dc = length(nc)
-
-    reffe_u = ReferenceFE(lagrangian,VectorValue{2,Float64},order)
+    reffe_u = ReferenceFE(lagrangian,VectorValue{Dc,Float64},order)
     reffe_p = ReferenceFE(lagrangian,Float64,order-1;space=:P)
-
-    labels = get_face_labeling(model)
-    add_tag_from_tags!(labels,"dir_top",[6,])
-    add_tag_from_tags!(labels,"dir_walls",[1,2,3,4,5,7,8])
-
-    V  = TestFESpace(model,reffe_u,dirichlet_tags=["dir_walls","dir_top"]);
-    U = TrialFESpace(V,[VectorValue(0.0,0.0),VectorValue(1.0,0.0)]);
-
-    Q = TestFESpace(model,reffe_p;conformity=:L2,constraint=:zeromean)
-    P = TrialFESpace(Q)
-
-
+  
+    u_bottom = (Dc==2) ? VectorValue(0.0,0.0) : VectorValue(0.0,0.0,0.0)
+    u_top = (Dc==2) ? VectorValue(1.0,0.0) : VectorValue(1.0,0.0,0.0)
+  
+    V = TestFESpace(model,reffe_u,dirichlet_tags=["bottom","top"]);
+    U = TrialFESpace(V,[u_bottom,u_top]);
+    Q = TestFESpace(model,reffe_p;conformity=:L2,constraint=:zeromean) 
+  
     mfs = Gridap.MultiField.BlockMultiFieldStyle()
     X = MultiFieldFESpace([U,Q];style=mfs)
     Y = MultiFieldFESpace([V,Q];style=mfs)
 
-    α = 1e9
-    f = VectorValue(0.0,0.0)
+
+    α = 1.e2
+    f = (Dc==2) ? VectorValue(1.0,1.0) : VectorValue(1.0,1.0,1.0)
 
 
     Ω = Triangulation(model)
@@ -91,7 +105,7 @@ function main(rank_partition,distribute)
     writevtk(Ω,"stokes",cellfields=["uh"=>uh])
 end
 
-rank_partition = (2,2)
+rank_partition = (1,1,4)
 with_mpi() do distribute
   main(rank_partition,distribute)
 end

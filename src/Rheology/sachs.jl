@@ -1,13 +1,16 @@
 
-function Sachsτhat(A,A⁴,uh,Ecc,Eca)
+
+function Sachsτhat(A,A⁴,ε,Ecc,Eca)
     μ = SachsVisc(A,A⁴,Ecc,Eca)
-    τ = μ⊙ε(uh)
+    τ = μ⊙ε
     ι = Eca/(0.4*Eca + 0.2*Ecc + 0.4)
     return ι*τ
 end
 
+
+
 function SachsVisc(A,A⁴,Ecc,Eca)
-    μ = inv4∘SachsFluidity(A,A⁴,Ecc,Eca)
+    μ = inv4∘SachsFluidity_op∘(A,A⁴,Ecc,Eca)
     return μ
 end
 
@@ -39,5 +42,6 @@ function SachsFluidity_op(A::SymTensorValue,A⁴::SymFourthOrderTensorValue,Ecc:
     F = δ⁴ + p₂*A⁴ + p₃*AntiCommuter(A) + p₁*δ⊗A 
     return F/(0.4*Eca + 0.2*Ecc + 0.4)
 end
+
 
 

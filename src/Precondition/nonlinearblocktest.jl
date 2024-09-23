@@ -17,10 +17,10 @@ using GridapSolvers.NonlinearSolvers
 using GridapSolvers.BlockSolvers: LinearSystemBlock, BiformBlock, BlockTriangularSolver, NonlinearSystemBlock, TriformBlock
 
 np = 1
-nc = (30,30)
+nc = (50,50) # large enough to run into problems
 
 model = CartesianDiscreteModel( (0.0,1.0,0.0,1.0), nc )
-order = 3
+order = 2
 qdegree = 2*(order+1)
 Dc = length(nc)
 
@@ -43,8 +43,6 @@ P = TrialFESpace(Q)
 mfs = Gridap.MultiField.BlockMultiFieldStyle()
 X = MultiFieldFESpace([U,Q];style=mfs)
 Y = MultiFieldFESpace([V,Q];style=mfs)
-# X = MultiFieldFESpace([U,Q])
-# Y = MultiFieldFESpace([V,Q])
 
 f = VectorValue(0.0,0.0)
 
@@ -57,7 +55,8 @@ poly = (Dc==2) ? QUAD : HEX
 graddiv(u,v,dΩ) = ∫(α*Π_Qh(divergence(u))⋅Π_Qh(divergence(v)))dΩ
 
 
-ϵ = 1e-4; n = 3.0; B = 100.0
+# Set up power law rheology
+ϵ = 1e-4; n = 2.5; B = 100.0
 η(ε) = B^(-1/n)*(0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
 dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
 
@@ -66,55 +65,39 @@ dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε�
 dτ(dε,ε) = dη∘(dε,ε)*ε + η∘(ε)*dε
 dgraddiv(du,u,v,dΩ) = ∫(α*Π_Qh(divergence(du))⋅Π_Qh(divergence(v)))dΩ
 
-
-
-res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ + graddiv(u,v,dΩ)
-jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ + dgraddiv(du,u,v,dΩ)
+res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ #+ graddiv(u,v,dΩ)
+jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ #+ dgraddiv(du,u,v,dΩ)
 
 op = FEOperator(res,jac,X,Y)
 
-# using LineSearches: BackTracking
-# nls = NLSolver(
-#   show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
-# solver_test = FESolver(nls)
-# sol = solve(solver_test,op)
-# uh, ph = sol
-# writevtk(Ω,"stokes",cellfields=["uh"=>uh])
-
-
 solver_u = LUSolver()
 solver_p = LUSolver()
-# solver_p = CGSolver(JacobiLinearSolver();maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
-  
 
-# invη(ε,p,q) = -1.0*p*q*B^(1/n)*(0.5*ε⊙ε + ϵ^2)^((n+1)/(2*n))
 η_(ε) = η∘(ε)
 
-# 
+Block = TriformBlock(((u,p),dp,q) -> ∫(-1.0/α*dp*q/η_(ε(u)))dΩ,X,Q,Q)
+# Q = BiformBlock((p,q) -> ∫(-p*q)dΩ,Q,Q)
+bblocks  = [NonlinearSystemBlock() LinearSystemBlock();
+            LinearSystemBlock()   Block]
 
 
-xh = zero(X)
+coeffs = [1.0 1.0;
+          0.0 1.0]
+P = BlockTriangularSolver(bblocks,[solver_u,solver_p],coeffs,:upper)
 
 
-for i = 1:20
-    uh,ph = xh
-    diag_blocks = [NonlinearSystemBlock(),BiformBlock((p,q) -> ∫(-1.0/α*p*q/η_(ε(uh)))dΩ,Q,Q)]
-    # diag_blocks  = [NonlinearSystemBlock(),TriformBlock(((u,p),dp,dq) -> ∫(-1.0/α*dp*dq/η_(ε(u)))dΩ,Y,Q,Q)]
+xh = interpolate([VectorValue(1.0,1.0),0.0],X)
 
-    bblocks = map(CartesianIndices((2,2))) do I
-    (I[1] == I[2]) ? diag_blocks[I[1]] : LinearSystemBlock()
-    end
+A = jacobian(op,xh)
+b = residual(op,xh)
+ss_b = symbolic_setup(P,A,b)
+ss = symbolic_setup(LUSolver(),A,b)
 
-    coeffs = [1.0 1.0;
-            0.0 1.0]
-    P = BlockTriangularSolver(bblocks,[solver_u,solver_p],coeffs,:upper)
-    solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6)
-    nlsolver = NewtonSolver(solver;maxiter=2,atol=1e-14,rtol=1.e-7,verbose=true)
-
-    solve!(xh,nlsolver,op)
-end
-
-uh, ph = xh
-
-writevtk(Ω,"stokes",cellfields=["uh"=>uh])
+ns_b = numerical_setup(ss_b,A)
+ns = numerical_setup(ss,A)
+dx_b = similar(b)
+dx = similar(b)
+rmul!(b,-1)
+solve!(dx_b,ns_b,b)
+solve!(dx,ns,b)
 

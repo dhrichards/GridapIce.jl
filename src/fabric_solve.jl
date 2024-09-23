@@ -18,12 +18,14 @@ struct SpecFab <: Fabric
     λ::Float64 # 
     f0::VectorValue
     L::Int
+    xycoords::Union{CellField,GridapDistributed.DistributedCellField}
     lm
     nlm_len::Int
     int_step::Int
     ls
 
-    function SpecFab(model,D::Int,type,order::Int,λ::Float64,L::Int,ls=LUSolver(),int_step=1)
+    function SpecFab(model,D::Int,type,order::Int,λ::Float64,L::Int,xycoords,ls=LUSolver(),int_step=1)
+        xycoords = CellField(VectorValue(xycoords),Triangulation(model))
         Td = (D==2 ? 3 : 6)
         lm,nlm_len = sf.init(L)
         degree = 2*order
@@ -77,7 +79,7 @@ struct SpecFab <: Fabric
             a2 = a2calc
             a4 = a4calc
         end
-        return new(D,Td,order,degree,solve,F,G,Ω,Γ,Λ,f0h,a2,a4,λ,f0,L,lm,nlm_len,int_step,ls)
+        return new(D,Td,order,degree,solve,F,G,Ω,Γ,Λ,f0h,a2,a4,λ,f0,L,xycoords,lm,nlm_len,int_step,ls)
     end
 
 end
@@ -147,8 +149,8 @@ function specfab_solve(fh,uh,C,z,dt,fab)
     dΩ = Measure(fab.Ω,fab.degree)
 
     # Switch from transformed grid to real: (also requires multiplying by h as dz = h*dζ)
-    ∇x = transform_gradient(z)
-    ∫_Ωx = transform_integral(z)
+    ∇x = transform_gradient(z,fab.xycoords)
+    ∫_Ωx = transform_integral(z,fab.xycoords)
 
 
 
@@ -178,7 +180,7 @@ function specfab_solve_real(fh,uh,C,z,dt,fab)
     dΩ = Measure(fab.Ω,fab.degree)
 
     # Switch from transformed grid to real: (also requires multiplying by h as dz = h*dζ)
-    ∇x = transform_gradient(z)
+    ∇x = transform_gradient(z,fab.xycoords)
     h = det∇(z)
 
     fhr,fhi = fh

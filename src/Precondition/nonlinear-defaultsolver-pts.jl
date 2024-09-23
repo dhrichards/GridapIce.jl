@@ -58,7 +58,7 @@ poly = (Dc==2) ? QUAD : HEX
 graddiv(u,v,dΩ) = ∫(α*Π_Qh(divergence(u))⋅Π_Qh(divergence(v)))dΩ
 
 
-ϵ = 1e-4; n = 2.5; B = 100.0
+ϵ = 1e-4; n = 3.0; B = 100.0
 η(ε) = B^(-1/n)*(0.5*ε⊙ε + ϵ^2)^((1-n)/(2*n))
 dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+ϵ^2)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
 
@@ -72,26 +72,14 @@ dgraddiv(du,u,v,dΩ) = ∫(α*Π_Qh(divergence(du))⋅Π_Qh(divergence(v)))dΩ
 res((u,p),(v,q)) = ∫(τ(ε(u))⊙ε(v) - divergence(v)*p - divergence(u)*q - v⋅f)dΩ #+ graddiv(u,v,dΩ)
 jac((u,p),(du,dp),(v,q)) = ∫(dτ(ε(du),ε(u))⊙ε(v) - divergence(v)*dp - divergence(du)*q)dΩ #+ dgraddiv(du,u,v,dΩ)
 
-op = FEOperator(res,jac,X,Y)
 
-## Check everything above is correct
-# using LineSearches: BackTracking
-# nls = NLSolver(
-#   show_trace=true, method=:newton,iterations=50,xtol=1e-8,ftol=1e-8,linesearch=BackTracking())
-# solver_test = FESolver(nls)
-# sol = solve(solver_test,op)
-# uh, ph = sol
-# writevtk(Ω,"stokes",cellfields=["uh"=>uh])
+η_(ε) = η∘(ε)
+
+
 
 solver_u = LUSolver()
 solver_p = LUSolver()
-# solver_p = CGSolver(JacobiLinearSolver();maxiter=30,atol=1e-14,rtol=1.e-6,verbose=false)
 
-# solver_p = CGSolver(JacobiLinearSolver();maxiter=20,atol=1e-14,rtol=1.e-6,verbose=false)
-  
-
-# invη(ε,p,q) = -1.0*p*q*B^(1/n)*(0.5*ε⊙ε + ϵ^2)^((n+1)/(2*n))
-η_(ε) = η∘(ε)
 
 TriForm = TriformBlock(((u,p),dp,q) -> ∫(-1.0/α*dp*q/η_(ε(u)))dΩ,X,Q,Q)
 bblocks  = [NonlinearSystemBlock() LinearSystemBlock();
@@ -99,7 +87,7 @@ bblocks  = [NonlinearSystemBlock() LinearSystemBlock();
 
 
 coeffs = [1.0 1.0;
-          0.0 1.0]
+        0.0 1.0]
 P = BlockTriangularSolver(bblocks,[solver_u,solver_p],coeffs,:upper)
 
 
@@ -108,10 +96,23 @@ solver = FGMRESSolver(20,P;atol=1e-14,rtol=1.e-6)
 nlsolver = NewtonSolver(solver;maxiter=25,atol=1e-14,rtol=1.e-7,verbose=true)
 
 
-# xh = interpolate([x->VectorValue(x[2],0.0),0.0],X)
-# xh = solve(nlsolver,op)
-solve!(xh,nlsolver,op)
 
+dt = 0.1
+
+xh = interpolate([x->VectorValue(x[2],0.0),0.0],X)
 uh, ph = xh
+for i=1:10
+
+    ptsres((u,p),(v,q)) = ∫(u⋅v/dt)dΩ + res((u,p),(v,q)) - ∫(uh⋅v/dt)dΩ
+    ptsjac((u,p),(du,dp),(v,q)) = ∫(du⋅v/dt)dΩ + jac((u,p),(du,dp),(v,q))
+    op = FEOperator(ptsres,ptsjac,X,Y)
+
+
+
+    solve!(xh,nlsolver,op)
+
+    uh, ph = xh
+
+end
 
 writevtk(Ω,"stokes",cellfields=["uh"=>uh])
