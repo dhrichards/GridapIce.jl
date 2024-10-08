@@ -67,7 +67,14 @@ function solve_up(sol,fh,z,stk::Stokes,rheo)
     divx(u) = tr(∇x(u)) 
     ∫_Ωx = transform_integral(z,stk.Lstretch)
 
+    # n = 3.0; B = 100.0
+    # η(ε) = B^(-1/n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n))
+    # dη(dε,ε) = B^(-1/n)*(1-n)/(2*n)*(0.5*ε⊙ε+1e-9)^((1-n)/(2*n)-1)*0.5*(dε⊙ε+ε⊙dε)
     
+
+    # μ = SachsVisc(a2calc2d(fh),a4calc2d(fh))
+    # τ(ε) = η∘(ε)*μ⊙ε
+    # dτ(dε,ε) = dη∘(dε,ε)*(μ⊙ε) + η∘(ε)*(μ⊙dε)
     τ(ε) = rheo.η∘(ε)*rheo.με(fh,ε)
     dτ(dε,ε) = rheo.dη∘(dε,ε)*rheo.με(fh,ε) + rheo.η∘(ε)*rheo.d_με(fh,dε,ε)
         

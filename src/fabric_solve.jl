@@ -17,9 +17,8 @@ struct SpecFab <: Fabric
     a4::Function # Fourth order tensor
     λ::Float64 # 
     f0::VectorValue
-    L::Int
+    L::Union{CellField,GridapDistributed.DistributedCellField}
     xycoords::Union{CellField,GridapDistributed.DistributedCellField}
-    lm
     nlm_len::Int
     int_step::Int
     ls
@@ -27,8 +26,10 @@ struct SpecFab <: Fabric
     function SpecFab(model,D::Int,type,order::Int,λ::Float64,L::Int,xycoords,ls=LUSolver(),int_step=1)
         xycoords = CellField(VectorValue(xycoords),Triangulation(model))
         Td = (D==2 ? 3 : 6)
-        lm,nlm_len = sf.init(L)
+        nlm_len = nlm_len_from_L(L)
         degree = 2*order
+
+        
 
         f0 = Complex.(zeros(nlm_len))
         f0[1] = 1/√(4π)
@@ -72,6 +73,7 @@ struct SpecFab <: Fabric
         Γ = BoundaryTriangulation(model)
         Λ = SkeletonTriangulation(model)
 
+        L = CellField(L,Ω)
         if D == 2
             a2 = a2calc2d
             a4 = a4calc2d
@@ -79,7 +81,7 @@ struct SpecFab <: Fabric
             a2 = a2calc
             a4 = a4calc
         end
-        return new(D,Td,order,degree,solve,F,G,Ω,Γ,Λ,f0h,a2,a4,λ,f0,L,xycoords,lm,nlm_len,int_step,ls)
+        return new(D,Td,order,degree,solve,F,G,Ω,Γ,Λ,f0h,a2,a4,λ,f0,L,xycoords,nlm_len,int_step,ls)
     end
 
 end
@@ -159,7 +161,7 @@ function specfab_solve(fh,uh,C,z,dt,fab)
     W = 0.5*(∇u - (∇u)')
     λ = fab.λ
 
-    M = makeM(W,C,λ*SR,fab.f0h)
+    M = makeM(W,C,λ*SR,fab.L)
 
     a(f,g) = ∫_Ωx( f⋅g + dt*(uh⋅∇x(f))⋅g + dt*κ*(∇x(f)⊙∇x(g)) -dt*(M⋅f)⋅g )dΩ # 
     b(g) = ∫_Ωx( fh⋅g )dΩ

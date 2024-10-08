@@ -1,12 +1,13 @@
 using Gridap
-using GridapIce
+# using GridapIce
+include("rawimports.jl")
 using Gridap.TensorValues
 
 problem = CustomB(1e3,0.5,0.5)
 L = (5000)
 
 D = problem.D
-ncell = (30,90)
+ncell = (30,20)
 domain = (D == 2) ? (0,1,0,1) : (0,1,0,1,0,1)
 domain = (D == 2) ? (-0.5,0.5,0,1) : (-0.5,0.5,-0.5,0.5,0,1)
 
@@ -21,8 +22,8 @@ nls = NLSolver(
 solver = FESolver(nls)
 # solver = LUSolver()
 
-Ecc = 1.0; Eca = 100.0; n=3.0; B = 100.0
-rheo = Rheology(Ecc,Eca,n,B,:Rathmann,Triangulation(model),D)
+Ecc = 1.0; Eca = 25.0; n=3.0; B = 100.0
+rheo = Rheology(Ecc,Eca,n,B,:Sachs,Triangulation(model),D)
 
 
 # n=1.0; B = 2.1430373e-1
@@ -30,7 +31,7 @@ stk = Stokes(model,problem,solver,L)
 
 fab = SpecFab(model,D,:H1implicit,1,0.3,4,L)
 
-CFL = 10.0
+CFL = 0.1
 d = minimum((L...,problem.H)./ncell)
 dt = CFL*d/100.0
 nt = 500
